@@ -9,6 +9,7 @@ use Exception;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 abstract class BaseApiService
 {
@@ -55,17 +56,26 @@ abstract class BaseApiService
 
     protected function handleResponse(Response $response): mixed
     {
-        $data = $response->json();
+        $contentType = $response->header('Content-Type');
 
-        if ($response->failed()) {
-            $this->logError($response, $data);
+        if (Str::contains($contentType, 'application/json')) {
+            $data = $response->json();
 
-            $message = $data['error']['message'] ?? $data['message'] ?? 'Erro desconhecido';
+            if ($response->failed()) {
+                $this->logError($response, $data);
+                $message = $data['error']['message'] ?? $data['message'] ?? 'Erro desconhecido';
+                throw new ResponseApiException("Erro API: {$message}", $response->status());
+            }
 
-            throw new ResponseApiException("Erro API: {$message}", $response->status());
+            return $data['data'] ?? $data;
         }
 
-        return $data['data'] ?? $data;
+        if ($response->failed()) {
+            $this->logError($response, ['body' => Str::limit($response->body(), 200)]);
+            throw new ResponseApiException('Erro ao baixar arquivo externo: '.$response->status(), $response->status());
+        }
+
+        return $response->body();
     }
 
     protected function logError(Response $response, ?array $data): void
